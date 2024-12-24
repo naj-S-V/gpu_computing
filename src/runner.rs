@@ -12,3 +12,4 @@ impl App for ClothRunner {
         println!("Rendering simulation...");
     }
 }
+

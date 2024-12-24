@@ -8,3 +8,4 @@ wgpu-bootstrap = { git = "https://github.com/qlurkin/wgpu-bootstrap" }
 bytemuck = { version = "1.15", features = ["derive"] }
 log = "0.4"
 env_logger = "0.11"
+

@@ -32,3 +32,4 @@ pub fn generate_cloth(rows: usize, cols: usize, spacing: f32) -> Vec<Particle> {
     }
     particles
 }
+
