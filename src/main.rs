@@ -1,4 +1,5 @@
 mod runner;
+mod cloth;  // Declare the cloth module
 
 use wgpu_bootstrap::runner::Runner;
 use std::sync::Arc;
@@ -6,8 +7,6 @@ use crate::runner::ClothRunner;
 use wgpu_bootstrap::egui::Color32;
 
 fn main() {
-    env_logger::init();
-
     let mut runner = Runner::new(
         "Cloth Simulation",
         800, // Width
