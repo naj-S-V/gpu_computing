@@ -103,6 +103,9 @@ impl MyApp {
 
         let texture_bind_group = create_texture_bind_group(context, &texture);
 
+        // =====================================================================
+        //                              Camera
+        // =====================================================================
         let camera = Camera {
             eye: (20.0, 50.0, 50.0).into(),
             target: (0.0, 0.0, 0.0).into(),
@@ -113,11 +116,11 @@ impl MyApp {
             zfar: 1000.0,
         };
 
-        // camera ------------------------------------------------------------
         let (_camera_buffer, camera_bind_group) = camera.create_camera_bind_group(context);
 
-        //======================================================================
-        // Sphere, the pipeline to draw it 
+        // =====================================================================
+        //                              Sphere
+        // =====================================================================
         let sphere_pipeline = context.create_render_pipeline(
             "Render Pipeline Sphere",
             include_str!("sphere.wgsl"),
@@ -153,7 +156,8 @@ impl MyApp {
 
 
         // =====================================================================
-        // Cloth, the pipeline to draw it 
+        //                              Cloth
+        // =====================================================================
         let cloth_pipeline = context.create_render_pipeline(
             "Render Pipeline Cloth",
             include_str!("cloth.wgsl"),
@@ -257,7 +261,9 @@ impl MyApp {
             ],
         );
 
-        // compute data -----------------------------------------------------
+        // =====================================================================
+        //                              Compute Data
+        // =====================================================================
         let compute_data = ComputeData {
             delta_time: 0.01,
             nb_vertices: (N_CLOTH_VERTICES_PER_ROW*N_CLOTH_VERTICES_PER_ROW) as f32,
@@ -289,79 +295,104 @@ impl MyApp {
                 },
             ],
         );
-
-        // Springs ----------------------------------------------------------
+        
+        // =====================================================================
+        //                              Springs
+        // =====================================================================
         let mut springs: Vec<Spring> = Vec::new();
         for i in 0..N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW {
+             // Calculate the row and column of the current vertex
             let col: i32 = (i % N_CLOTH_VERTICES_PER_ROW) as i32;
             let row: i32 = (i / N_CLOTH_VERTICES_PER_ROW) as i32;
-            // structural springs
-            for j in [-1,1] as [i32; 2] {
-                // col +- 1
+
+            // Structural springs: connect current vertex to its horizontal and vertical neighbors
+            for j in [-1, 1] as [i32; 2] {
+                // Horizontal neighbors (col +/- 1)
                 let mut index2 = row * N_CLOTH_VERTICES_PER_ROW as i32 + col + j;
+                // Check if the neighbor is out of bounds (left or right edge)
                 if col + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || col + j < 0 {
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                // Add a spring connecting the current vertex to its horizontal neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32),
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Neighbor vertex index
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32), // Resting length of the spring
                 });
-                // row +- 1
+
+                // Vertical neighbors (row +/- 1)
                 index2 = (row + j) * N_CLOTH_VERTICES_PER_ROW as i32 + col;
+                // Check if the neighbor is out of bounds (top or bottom edge)
                 if row + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || row + j < 0 {
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                // Add a spring connecting the current vertex to its vertical neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32),
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Neighbor vertex index
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32), // Resting length of the spring
                 });
             }
-            // shear springs
-            for j in [-1,1] as [i32; 2] {
-                // col + j and row + j
+            // Shear springs: connect current vertex to its diagonal neighbors
+            for j in [-1, 1] as [i32; 2] {
+                // Diagonal neighbors: bottom-right and top-left (row +/- j, col +/- j)
                 let mut index2 = (row + j) * N_CLOTH_VERTICES_PER_ROW as i32 + col + j;
+                // Check if the neighbor is out of bounds
                 if col + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || col + j < 0 || row + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || row + j < 0 {
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                // Add a shear spring connecting the current vertex to the diagonal neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 1.41421356237,
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Diagonal neighbor index
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 1.41421356237, // Diagonal resting length
                 });
-                // col + j and row - j
+
+                // Diagonal neighbors: bottom-left and top-right (row +/- j, col -/+ j)
                 index2 = (row - j) * N_CLOTH_VERTICES_PER_ROW as i32 + col + j;
+                // Check if the neighbor is out of bounds
                 if col + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || col + j < 0 || row - j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || row - j < 0 {
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                // Add a shear spring connecting the current vertex to the diagonal neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 1.41421356237,
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Diagonal neighbor index
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 1.41421356237, // Diagonal resting length
                 });
             }
-            // bend springs
+            // Bend springs: Adding structural springs to connect vertices that are two steps apart.
             for j in [-1,1] as [i32; 2] {
-                // col +- 2j
+                // Horizontal bend springs: col ± 2j
                 let mut index2 = row * N_CLOTH_VERTICES_PER_ROW as i32 + col + 2 * j;
+                
+                // Check if the neighbor (col ± 2j) is within the grid boundaries
                 if col + 2 * j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || col + 2 * j < 0 {
+                    // If out of bounds, assign an invalid index to avoid creating a spring
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                
+                // Add a bend spring between the current vertex and its horizontal neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 2.0,
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Horizontal neighbor index (two steps away)
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 2.0, // Rest length is double the horizontal step
                 });
-                // row +- 2j
+
+                // Vertical bend springs: row ± 2j
                 index2 = (row + 2 * j) * N_CLOTH_VERTICES_PER_ROW as i32 + col;
+                
+                // Check if the neighbor (row ± 2j) is within the grid boundaries
                 if row + 2 * j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || row + 2 * j < 0 {
+                    // If out of bounds, assign an invalid index to avoid creating a spring
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+
+                // Add a bend spring between the current vertex and its vertical neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 2.0,
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Vertical neighbor index (two steps away)
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 2.0, // Rest length is double the vertical step
                 });
             }
         }
