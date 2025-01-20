@@ -76,8 +76,8 @@ struct MyApp {
     texture_bind_group: wgpu::BindGroup,
     // sphere
     sphere_pipeline: wgpu::RenderPipeline,
-    sphere_vertex_buffer: wgpu::Buffer,
-    sphere_index_buffer: wgpu::Buffer,
+    sphere_vertex_buffer: wgpu::Buffer, // All the vertices of the sphere (all stored to be accessed by the GPU)
+    sphere_index_buffer: wgpu::Buffer, // All the indices of the sphere, how to assemble the vertices
     sphere_indices: Vec<u16>,
     // cloth
     cloth_pipeline: wgpu::RenderPipeline,
@@ -106,11 +106,11 @@ impl MyApp {
         let texture_bind_group = create_texture_bind_group(context, &texture);
 
         let camera = Camera {
-            eye: (40.0, 30.0, 30.0).into(),
+            eye: (0.0, 10.0, 50.0).into(),
             target: (0.0, 0.0, 0.0).into(),
             up: cgmath::Vector3::unit_y(),
             aspect: context.get_aspect_ratio(),
-            fovy: 45.0,
+            fovy: 90.0,
             znear: 0.1,
             zfar: 1000.0,
         };
@@ -118,7 +118,8 @@ impl MyApp {
         // camera ------------------------------------------------------------
         let (_camera_buffer, camera_bind_group) = camera.create_camera_bind_group(context);
 
-        // sphere ------------------------------------------------------------
+        //======================================================================
+        // Sphere, the pipeline to draw it 
         let sphere_pipeline = context.create_render_pipeline(
             "Render Pipeline Sphere",
             include_str!("sphere.wgsl"),
@@ -152,10 +153,12 @@ impl MyApp {
             wgpu::BufferUsages::INDEX
         );
 
-        // Cloth ------------------------------------------------------------
+
+        // =====================================================================
+        // Cloth, the pipeline to draw it 
         let cloth_pipeline = context.create_render_pipeline(
             "Render Pipeline Cloth",
-            include_str!("red.wgsl"),
+            include_str!("cloth.wgsl"),
             &[Vertex::desc()],
             &[
                 &context.texture_bind_group_layout,
