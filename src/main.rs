@@ -443,78 +443,151 @@ impl MyApp {
 }
 
 impl Application for MyApp {
+    // Function to render the scene
     fn render(&self, context: &Context) -> Result<(), wgpu::SurfaceError> {
+        // Create a new frame to render into
         let mut frame = Frame::new(context)?;
 
         {
-            let mut render_pass = frame.begin_render_pass(wgpu::Color {r: 0.85, g: 0.85, b: 0.85, a: 1.0});
-            // render the sphere
+            // Begin a new render pass with a background color (light gray)
+            let mut render_pass = frame.begin_render_pass(wgpu::Color {
+                r: 0.85, // Red component of the background color
+                g: 0.85, // Green component of the background color
+                b: 0.85, // Blue component of the background color
+                a: 1.0,  // Alpha (opacity) set to fully opaque
+            });
+
+            // ===========================
+            // Render the sphere
+            // ===========================
+
+            // Set the graphics pipeline for the sphere
             render_pass.set_pipeline(&self.sphere_pipeline);
+
+            // Bind the camera data to the pipeline (view and projection matrices)
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+
+            // Set the vertex buffer containing the sphere's vertices
             render_pass.set_vertex_buffer(0, self.sphere_vertex_buffer.slice(..));
+
+            // Set the index buffer containing the sphere's indices
             render_pass.set_index_buffer(self.sphere_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            // Draw the sphere using indexed drawing
             render_pass.draw_indexed(0..self.sphere_indices.len() as u32, 0, 0..1);
-            // render the cloth as a triangle list
+
+            // ===========================
+            // Render the cloth
+            // ===========================
+
+            // Set the graphics pipeline for the cloth
             render_pass.set_pipeline(&self.cloth_pipeline);
+
+            // Bind the texture data to the pipeline
             render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+
+            // Bind the camera data to the pipeline (view and projection matrices)
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+
+            // Set the vertex buffer containing the cloth's vertices
             render_pass.set_vertex_buffer(0, self.cloth_vertex_buffer.slice(..));
+
+            // Set the index buffer containing the cloth's indices
             render_pass.set_index_buffer(self.cloth_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            // Draw the cloth using indexed drawing
             render_pass.draw_indexed(0..self.cloth_indices.len() as u32, 0, 0..1);
         }
 
+        // Present the rendered frame to the screen
         frame.present();
-        
+
+        // Return success if rendering completes without errors
         Ok(())
     }
 
+
+    // Function to update simulation data
     fn update(&mut self, context: &Context, delta_time: f32) {
-        // update the compute data
+        // ================================
+        // Step 1: Update uniform compute data
+        // ================================
         let compute_data = ComputeData {
-            delta_time: delta_time/N_ITERATIONS as f32,
-            nb_vertices: (N_CLOTH_VERTICES_PER_ROW*N_CLOTH_VERTICES_PER_ROW) as f32,
-            sphere_radius: SPHERE_RADIUS,
-            sphere_center_x: SPHERE_CENTER_X,
-            sphere_center_y: SPHERE_CENTER_Y,
-            sphere_center_z: SPHERE_CENTER_Z,
-            vertex_mass: VERTEX_MASS,
-            structural_stiffness: STRUCTURAL_STIFFNESS,
-            shear_stiffness: SHEAR_STIFFNESS,
-            bend_stiffness: BEND_STIFFNESS,
-            structural_damping: STRUCTURAL_DAMPING,
-            shear_damping: SHEAR_DAMPING,
-            bend_damping: BEND_DAMPING,
+            delta_time: delta_time / N_ITERATIONS as f32, // Divide delta_time for stability
+            nb_vertices: (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f32, // Total number of vertices
+            sphere_radius: SPHERE_RADIUS, // Sphere radius
+            sphere_center_x: SPHERE_CENTER_X, // Sphere center (X-coordinate)
+            sphere_center_y: SPHERE_CENTER_Y, // Sphere center (Y-coordinate)
+            sphere_center_z: SPHERE_CENTER_Z, // Sphere center (Z-coordinate)
+            vertex_mass: VERTEX_MASS, // Mass of each vertex
+            structural_stiffness: STRUCTURAL_STIFFNESS, // Stiffness of structural springs
+            shear_stiffness: SHEAR_STIFFNESS, // Stiffness of shear springs
+            bend_stiffness: BEND_STIFFNESS, // Stiffness of bend springs
+            structural_damping: STRUCTURAL_DAMPING, // Damping for structural springs
+            shear_damping: SHEAR_DAMPING, // Damping for shear springs
+            bend_damping: BEND_DAMPING, // Damping for bend springs
         };
+
+        // Update the compute data buffer on the GPU
         context.update_buffer(&self.compute_data_buffer, &[compute_data]);
 
-        let mut computation = Computation::new(context);
+        // ================================
+        // Step 2: Initialize computation
+        // ================================
+        let mut computation = Computation::new(context); // Create a computation object
 
-        for _ in 0..N_ITERATIONS
-        {
+        // ================================
+        // Step 3: Perform multiple iterations
+        // ================================
+        for _ in 0..N_ITERATIONS {
+            // --------------------------------
+            // Pass 1: Calculate forces
+            // --------------------------------
             let mut compute_pass = computation.begin_compute_pass();
-            // calculate the forces
-            compute_pass.set_pipeline(&self.forces_compute_pipeline);
-            compute_pass.set_bind_group(0, &self.compute_vertices_bind_group, &[]);
-            compute_pass.set_bind_group(1, &self.compute_velocities_bind_group, &[]);
-            compute_pass.set_bind_group(2, &self.compute_data_bind_group, &[]);
-            compute_pass.set_bind_group(3, &self.springs_bind_group, &[]);
-            compute_pass.dispatch_workgroups(((N_CLOTH_VERTICES_PER_ROW*N_CLOTH_VERTICES_PER_ROW) as f64/128.0).ceil() as u32, 1, 1);
+            compute_pass.set_pipeline(&self.forces_compute_pipeline); // Use forces compute pipeline
 
-            // update the positions and collisions
-            compute_pass.set_pipeline(&self.compute_pipeline);
+            // Bind required resources to the pipeline
+            compute_pass.set_bind_group(0, &self.compute_vertices_bind_group, &[]); // Vertex positions
+            compute_pass.set_bind_group(1, &self.compute_velocities_bind_group, &[]); // Vertex velocities
+            compute_pass.set_bind_group(2, &self.compute_data_bind_group, &[]); // Simulation parameters
+            compute_pass.set_bind_group(3, &self.springs_bind_group, &[]); // Spring connections
+
+            // Dispatch compute workgroups for force calculations
+            compute_pass.dispatch_workgroups(
+                ((N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f64 / 128.0).ceil() as u32,
+                1,
+                1,
+            );
+
+            // --------------------------------
+            // Pass 2: Update positions and handle collisions
+            // --------------------------------
+            compute_pass.set_pipeline(&self.compute_pipeline); // Use position update pipeline
+
+            // Bind the same resources again for position updates
             compute_pass.set_bind_group(0, &self.compute_vertices_bind_group, &[]);
             compute_pass.set_bind_group(1, &self.compute_velocities_bind_group, &[]);
             compute_pass.set_bind_group(2, &self.compute_data_bind_group, &[]);
             compute_pass.set_bind_group(3, &self.springs_bind_group, &[]);
-            compute_pass.dispatch_workgroups(((N_CLOTH_VERTICES_PER_ROW*N_CLOTH_VERTICES_PER_ROW) as f32/128.0).ceil() as u32, 1, 1);
+
+            // Dispatch compute workgroups for position updates
+            compute_pass.dispatch_workgroups(
+                ((N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f32 / 128.0).ceil() as u32,
+                1,
+                1,
+            );
         }
-        computation.submit();
+
+        // ================================
+        // Step 4: Submit computations to GPU
+        // ================================
+        computation.submit(); // Submit all compute passes for execution
     }
+
 }
 
 fn main() {
     let window = Window::new();
-
 
     let context = window.get_context();
 
