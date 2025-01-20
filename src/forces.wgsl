@@ -45,65 +45,77 @@ struct Spring {
 @group(2) @binding(0) var<uniform> data: ComputeData;
 @group(3) @binding(0) var<storage, read> springsR: array<Spring>;
 
+// Compute shader entry point
 @compute @workgroup_size(128, 1, 1)
 fn main(@builtin(global_invocation_id) param: vec3<u32>) {
+    // Ensure the thread index does not exceed the number of vertices
     if (param.x >= u32(data.nb_vertices)) {
-          return;
+        return; // Exit early if the thread index is out of bounds
     }
 
+    // Initialize a vector to accumulate the forces applied to the current vertex
     var force_sum = vec3<f32>(0.0, 0.0, 0.0);
-    for (var i = 0 ; i < 12; i++) {
-        let spring = springsR[param.x*u32(12) + u32(i)];
-        let vertex_index_1 = u32(spring.vertex_index_1);
-        let vertex_index_2 = u32(spring.vertex_index_2);
-        let rest_length = spring.rest_length;
 
+    // Loop through all springs connected to the current vertex
+    for (var i = 0 ; i < 12; i++) {
+        // Retrieve the spring data
+        let spring = springsR[param.x * u32(12) + u32(i)];
+        let vertex_index_1 = u32(spring.vertex_index_1); // Index of the current vertex
+        let vertex_index_2 = u32(spring.vertex_index_2); // Index of the connected vertex
+        let rest_length = spring.rest_length; // Resting length of the spring
+
+        // Ensure the connected vertex index is valid
         if u32(spring.vertex_index_2) <= u32(data.nb_vertices) {
-            // calculate the distance between the two vertices
+            // Calculate the distance and direction between the two vertices
             let position_1 = vec3<f32>(verticiesPositions[vertex_index_1].position_x, verticiesPositions[vertex_index_1].position_y, verticiesPositions[vertex_index_1].position_z);
             let position_2 = vec3<f32>(verticiesPositions[vertex_index_2].position_x, verticiesPositions[vertex_index_2].position_y, verticiesPositions[vertex_index_2].position_z);
-            var distance = length(position_1 - position_2);
-            var direction = normalize(position_1 - position_2);
+            var distance = length(position_1 - position_2); // Actual distance between vertices
+            var direction = normalize(position_1 - position_2); // Normalized direction vector
 
-            // calculate the speed of the first vertex relative to the second
+            // Calculate relative velocity between the two vertices
             let velocity_1 = vec3<f32>(verticiesVelocities[vertex_index_1].velocity_x, verticiesVelocities[vertex_index_1].velocity_y, verticiesVelocities[vertex_index_1].velocity_z);
             let velocity_2 = vec3<f32>(verticiesVelocities[vertex_index_2].velocity_x, verticiesVelocities[vertex_index_2].velocity_y, verticiesVelocities[vertex_index_2].velocity_z);
-            let relative_velocity = length(velocity_1 - velocity_2);
-            let velocity_direction = normalize(velocity_1 - velocity_2);
-            
+            let relative_velocity = length(velocity_1 - velocity_2); // Magnitude of relative velocity
+            let velocity_direction = normalize(velocity_1 - velocity_2); // Direction of relative velocity
 
+            // Handle structural springs (first 4 springs)
             if i < 4 {
-                let force = -data.structural_stiffness * (distance - rest_length);
-                force_sum += force * direction;
+                let force = -data.structural_stiffness * (distance - rest_length); // Hooke's law
+                force_sum += force * direction; // Accumulate structural spring force
                 if relative_velocity != 0.0 {
-                    let damping_force = -data.structural_damping * relative_velocity;
-                    force_sum += damping_force * velocity_direction;
+                    let damping_force = -data.structural_damping * relative_velocity; // Damping force
+                    force_sum += damping_force * velocity_direction; // Accumulate damping force
                 }
-            } else if i < 8 {
-                let force = -data.shear_stiffness * (distance - rest_length);
-                force_sum += force * direction;
+            } 
+            // Handle shear springs (springs 4 to 7)
+            else if i < 8 {
+                let force = -data.shear_stiffness * (distance - rest_length); // Hooke's law for shear springs
+                force_sum += force * direction; // Accumulate shear spring force
                 if relative_velocity != 0.0 {
-                    let damping_force = -data.shear_damping * relative_velocity;
-                    force_sum += damping_force * velocity_direction;
+                    let damping_force = -data.shear_damping * relative_velocity; // Damping force
+                    force_sum += damping_force * velocity_direction; // Accumulate damping force
                 }
-            } else if i < 12 {
-                // direction.z = 0.0;
-                let force = -data.bend_stiffness * (distance - rest_length) - data.bend_damping * relative_velocity;
-                force_sum += force * direction;
+            } 
+            // Handle bend springs (last 4 springs)
+            else if i < 12 {
+                let force = -data.bend_stiffness * (distance - rest_length) - data.bend_damping * relative_velocity; // Bend force
+                force_sum += force * direction; // Accumulate bend spring force
                 if relative_velocity != 0.0 {
-                    let damping_force = -data.bend_damping * relative_velocity;
-                    force_sum += damping_force * velocity_direction;
+                    let damping_force = -data.bend_damping * relative_velocity; // Damping force
+                    force_sum += damping_force * velocity_direction; // Accumulate damping force
                 }
             }
         }
     }
+
+    // Add gravitational force to the vertex
     force_sum.y += -9.81 * data.vertex_mass;
 
-    // update the velocity of the vertex
+    // Update the velocity of the vertex using the accumulated force
     verticiesVelocities[param.x].velocity_x += (force_sum.x / data.vertex_mass) * data.delta_time;
     verticiesVelocities[param.x].velocity_y += (force_sum.y / data.vertex_mass) * data.delta_time;
     verticiesVelocities[param.x].velocity_z += (force_sum.z / data.vertex_mass) * data.delta_time;
 
-    // update the position of the vertex, or it crashes
+    // Explicitly access verticiesPositions to ensure memory consistency
     verticiesPositions[param.x].position_x += 0.0;
 }

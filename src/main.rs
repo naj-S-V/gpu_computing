@@ -58,8 +58,6 @@ const SPHERE_CENTER_X: f32 = 0.0;
 const SPHERE_CENTER_Y: f32 = 0.0;
 const SPHERE_CENTER_Z: f32 = 0.0;
 // PHYSICS
-const MASS: f32 = 200.0;
-// const VERTEX_MASS: f32 = MASS / (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f32;
 const VERTEX_MASS: f32 = 0.16;
 const STRUCTURAL_STIFFNESS: f32 = 150.0;
 const SHEAR_STIFFNESS: f32 = 5.0;
@@ -76,8 +74,8 @@ struct MyApp {
     texture_bind_group: wgpu::BindGroup,
     // sphere
     sphere_pipeline: wgpu::RenderPipeline,
-    sphere_vertex_buffer: wgpu::Buffer,
-    sphere_index_buffer: wgpu::Buffer,
+    sphere_vertex_buffer: wgpu::Buffer, // All the vertices of the sphere (all stored to be accessed by the GPU)
+    sphere_index_buffer: wgpu::Buffer, // All the indices of the sphere, how to assemble the vertices
     sphere_indices: Vec<u16>,
     // cloth
     cloth_pipeline: wgpu::RenderPipeline,
@@ -105,20 +103,24 @@ impl MyApp {
 
         let texture_bind_group = create_texture_bind_group(context, &texture);
 
+        // =====================================================================
+        //                              Camera
+        // =====================================================================
         let camera = Camera {
-            eye: (40.0, 30.0, 30.0).into(),
+            eye: (20.0, 50.0, 50.0).into(),
             target: (0.0, 0.0, 0.0).into(),
             up: cgmath::Vector3::unit_y(),
             aspect: context.get_aspect_ratio(),
-            fovy: 45.0,
+            fovy: 75.0,
             znear: 0.1,
             zfar: 1000.0,
         };
 
-        // camera ------------------------------------------------------------
         let (_camera_buffer, camera_bind_group) = camera.create_camera_bind_group(context);
 
-        // sphere ------------------------------------------------------------
+        // =====================================================================
+        //                              Sphere
+        // =====================================================================
         let sphere_pipeline = context.create_render_pipeline(
             "Render Pipeline Sphere",
             include_str!("sphere.wgsl"),
@@ -152,10 +154,13 @@ impl MyApp {
             wgpu::BufferUsages::INDEX
         );
 
-        // Cloth ------------------------------------------------------------
+
+        // =====================================================================
+        //                              Cloth
+        // =====================================================================
         let cloth_pipeline = context.create_render_pipeline(
             "Render Pipeline Cloth",
-            include_str!("red.wgsl"),
+            include_str!("cloth.wgsl"),
             &[Vertex::desc()],
             &[
                 &context.texture_bind_group_layout,
@@ -256,7 +261,9 @@ impl MyApp {
             ],
         );
 
-        // compute data -----------------------------------------------------
+        // =====================================================================
+        //                              Compute Data
+        // =====================================================================
         let compute_data = ComputeData {
             delta_time: 0.01,
             nb_vertices: (N_CLOTH_VERTICES_PER_ROW*N_CLOTH_VERTICES_PER_ROW) as f32,
@@ -288,79 +295,104 @@ impl MyApp {
                 },
             ],
         );
-
-        // Springs ----------------------------------------------------------
+        
+        // =====================================================================
+        //                              Springs
+        // =====================================================================
         let mut springs: Vec<Spring> = Vec::new();
         for i in 0..N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW {
+             // Calculate the row and column of the current vertex
             let col: i32 = (i % N_CLOTH_VERTICES_PER_ROW) as i32;
             let row: i32 = (i / N_CLOTH_VERTICES_PER_ROW) as i32;
-            // structural springs
-            for j in [-1,1] as [i32; 2] {
-                // col +- 1
+
+            // Structural springs: connect current vertex to its horizontal and vertical neighbors
+            for j in [-1, 1] as [i32; 2] {
+                // Horizontal neighbors (col +/- 1)
                 let mut index2 = row * N_CLOTH_VERTICES_PER_ROW as i32 + col + j;
+                // Check if the neighbor is out of bounds (left or right edge)
                 if col + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || col + j < 0 {
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                // Add a spring connecting the current vertex to its horizontal neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32),
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Neighbor vertex index
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32), // Resting length of the spring
                 });
-                // row +- 1
+
+                // Vertical neighbors (row +/- 1)
                 index2 = (row + j) * N_CLOTH_VERTICES_PER_ROW as i32 + col;
+                // Check if the neighbor is out of bounds (top or bottom edge)
                 if row + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || row + j < 0 {
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                // Add a spring connecting the current vertex to its vertical neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32),
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Neighbor vertex index
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32), // Resting length of the spring
                 });
             }
-            // shear springs
-            for j in [-1,1] as [i32; 2] {
-                // col + j and row + j
+            // Shear springs: connect current vertex to its diagonal neighbors
+            for j in [-1, 1] as [i32; 2] {
+                // Diagonal neighbors: bottom-right and top-left (row +/- j, col +/- j)
                 let mut index2 = (row + j) * N_CLOTH_VERTICES_PER_ROW as i32 + col + j;
+                // Check if the neighbor is out of bounds
                 if col + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || col + j < 0 || row + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || row + j < 0 {
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                // Add a shear spring connecting the current vertex to the diagonal neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 1.41421356237,
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Diagonal neighbor index
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 1.41421356237, // Diagonal resting length
                 });
-                // col + j and row - j
+
+                // Diagonal neighbors: bottom-left and top-right (row +/- j, col -/+ j)
                 index2 = (row - j) * N_CLOTH_VERTICES_PER_ROW as i32 + col + j;
+                // Check if the neighbor is out of bounds
                 if col + j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || col + j < 0 || row - j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || row - j < 0 {
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                // Add a shear spring connecting the current vertex to the diagonal neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 1.41421356237,
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Diagonal neighbor index
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 1.41421356237, // Diagonal resting length
                 });
             }
-            // bend springs
+            // Bend springs: Adding structural springs to connect vertices that are two steps apart.
             for j in [-1,1] as [i32; 2] {
-                // col +- 2j
+                // Horizontal bend springs: col ± 2j
                 let mut index2 = row * N_CLOTH_VERTICES_PER_ROW as i32 + col + 2 * j;
+                
+                // Check if the neighbor (col ± 2j) is within the grid boundaries
                 if col + 2 * j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || col + 2 * j < 0 {
+                    // If out of bounds, assign an invalid index to avoid creating a spring
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+                
+                // Add a bend spring between the current vertex and its horizontal neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 2.0,
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Horizontal neighbor index (two steps away)
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 2.0, // Rest length is double the horizontal step
                 });
-                // row +- 2j
+
+                // Vertical bend springs: row ± 2j
                 index2 = (row + 2 * j) * N_CLOTH_VERTICES_PER_ROW as i32 + col;
+                
+                // Check if the neighbor (row ± 2j) is within the grid boundaries
                 if row + 2 * j > N_CLOTH_VERTICES_PER_ROW as i32 - 1 || row + 2 * j < 0 {
+                    // If out of bounds, assign an invalid index to avoid creating a spring
                     index2 = (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW + 1) as i32;
                 }
+
+                // Add a bend spring between the current vertex and its vertical neighbor
                 springs.push(Spring {
-                    index1: i as f32,
-                    index2: index2 as f32,
-                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 2.0,
+                    index1: i as f32, // Current vertex index
+                    index2: index2 as f32, // Vertical neighbor index (two steps away)
+                    rest_length: (CLOTH_SIZE / (N_CLOTH_VERTICES_PER_ROW - 1) as f32) * 2.0, // Rest length is double the vertical step
                 });
             }
         }
@@ -411,78 +443,151 @@ impl MyApp {
 }
 
 impl Application for MyApp {
+    // Function to render the scene
     fn render(&self, context: &Context) -> Result<(), wgpu::SurfaceError> {
+        // Create a new frame to render into
         let mut frame = Frame::new(context)?;
 
         {
-            let mut render_pass = frame.begin_render_pass(wgpu::Color {r: 0.85, g: 0.85, b: 0.85, a: 1.0});
-            // render the sphere
+            // Begin a new render pass with a background color (light gray)
+            let mut render_pass = frame.begin_render_pass(wgpu::Color {
+                r: 0.85, // Red component of the background color
+                g: 0.85, // Green component of the background color
+                b: 0.85, // Blue component of the background color
+                a: 1.0,  // Alpha (opacity) set to fully opaque
+            });
+
+            // ===========================
+            // Render the sphere
+            // ===========================
+
+            // Set the graphics pipeline for the sphere
             render_pass.set_pipeline(&self.sphere_pipeline);
+
+            // Bind the camera data to the pipeline (view and projection matrices)
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+
+            // Set the vertex buffer containing the sphere's vertices
             render_pass.set_vertex_buffer(0, self.sphere_vertex_buffer.slice(..));
+
+            // Set the index buffer containing the sphere's indices
             render_pass.set_index_buffer(self.sphere_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            // Draw the sphere using indexed drawing
             render_pass.draw_indexed(0..self.sphere_indices.len() as u32, 0, 0..1);
-            // render the cloth as a triangle list
+
+            // ===========================
+            // Render the cloth
+            // ===========================
+
+            // Set the graphics pipeline for the cloth
             render_pass.set_pipeline(&self.cloth_pipeline);
+
+            // Bind the texture data to the pipeline
             render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+
+            // Bind the camera data to the pipeline (view and projection matrices)
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+
+            // Set the vertex buffer containing the cloth's vertices
             render_pass.set_vertex_buffer(0, self.cloth_vertex_buffer.slice(..));
+
+            // Set the index buffer containing the cloth's indices
             render_pass.set_index_buffer(self.cloth_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            // Draw the cloth using indexed drawing
             render_pass.draw_indexed(0..self.cloth_indices.len() as u32, 0, 0..1);
         }
 
+        // Present the rendered frame to the screen
         frame.present();
-        
+
+        // Return success if rendering completes without errors
         Ok(())
     }
 
+
+    // Function to update simulation data
     fn update(&mut self, context: &Context, delta_time: f32) {
-        // update the compute data
+        // ================================
+        // Step 1: Update uniform compute data
+        // ================================
         let compute_data = ComputeData {
-            delta_time: delta_time/N_ITERATIONS as f32,
-            nb_vertices: (N_CLOTH_VERTICES_PER_ROW*N_CLOTH_VERTICES_PER_ROW) as f32,
-            sphere_radius: SPHERE_RADIUS,
-            sphere_center_x: SPHERE_CENTER_X,
-            sphere_center_y: SPHERE_CENTER_Y,
-            sphere_center_z: SPHERE_CENTER_Z,
-            vertex_mass: VERTEX_MASS,
-            structural_stiffness: STRUCTURAL_STIFFNESS,
-            shear_stiffness: SHEAR_STIFFNESS,
-            bend_stiffness: BEND_STIFFNESS,
-            structural_damping: STRUCTURAL_DAMPING,
-            shear_damping: SHEAR_DAMPING,
-            bend_damping: BEND_DAMPING,
+            delta_time: delta_time / N_ITERATIONS as f32, // Divide delta_time for stability
+            nb_vertices: (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f32, // Total number of vertices
+            sphere_radius: SPHERE_RADIUS, // Sphere radius
+            sphere_center_x: SPHERE_CENTER_X, // Sphere center (X-coordinate)
+            sphere_center_y: SPHERE_CENTER_Y, // Sphere center (Y-coordinate)
+            sphere_center_z: SPHERE_CENTER_Z, // Sphere center (Z-coordinate)
+            vertex_mass: VERTEX_MASS, // Mass of each vertex
+            structural_stiffness: STRUCTURAL_STIFFNESS, // Stiffness of structural springs
+            shear_stiffness: SHEAR_STIFFNESS, // Stiffness of shear springs
+            bend_stiffness: BEND_STIFFNESS, // Stiffness of bend springs
+            structural_damping: STRUCTURAL_DAMPING, // Damping for structural springs
+            shear_damping: SHEAR_DAMPING, // Damping for shear springs
+            bend_damping: BEND_DAMPING, // Damping for bend springs
         };
+
+        // Update the compute data buffer on the GPU
         context.update_buffer(&self.compute_data_buffer, &[compute_data]);
 
-        let mut computation = Computation::new(context);
+        // ================================
+        // Step 2: Initialize computation
+        // ================================
+        let mut computation = Computation::new(context); // Create a computation object
 
-        for _ in 0..N_ITERATIONS
-        {
+        // ================================
+        // Step 3: Perform multiple iterations
+        // ================================
+        for _ in 0..N_ITERATIONS {
+            // --------------------------------
+            // Pass 1: Calculate forces
+            // --------------------------------
             let mut compute_pass = computation.begin_compute_pass();
-            // calculate the forces
-            compute_pass.set_pipeline(&self.forces_compute_pipeline);
-            compute_pass.set_bind_group(0, &self.compute_vertices_bind_group, &[]);
-            compute_pass.set_bind_group(1, &self.compute_velocities_bind_group, &[]);
-            compute_pass.set_bind_group(2, &self.compute_data_bind_group, &[]);
-            compute_pass.set_bind_group(3, &self.springs_bind_group, &[]);
-            compute_pass.dispatch_workgroups(((N_CLOTH_VERTICES_PER_ROW*N_CLOTH_VERTICES_PER_ROW) as f64/128.0).ceil() as u32, 1, 1);
+            compute_pass.set_pipeline(&self.forces_compute_pipeline); // Use forces compute pipeline
 
-            // update the positions and collisions
-            compute_pass.set_pipeline(&self.compute_pipeline);
+            // Bind required resources to the pipeline
+            compute_pass.set_bind_group(0, &self.compute_vertices_bind_group, &[]); // Vertex positions
+            compute_pass.set_bind_group(1, &self.compute_velocities_bind_group, &[]); // Vertex velocities
+            compute_pass.set_bind_group(2, &self.compute_data_bind_group, &[]); // Simulation parameters
+            compute_pass.set_bind_group(3, &self.springs_bind_group, &[]); // Spring connections
+
+            // Dispatch compute workgroups for force calculations
+            compute_pass.dispatch_workgroups(
+                ((N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f64 / 128.0).ceil() as u32,
+                1,
+                1,
+            );
+
+            // --------------------------------
+            // Pass 2: Update positions and handle collisions
+            // --------------------------------
+            compute_pass.set_pipeline(&self.compute_pipeline); // Use position update pipeline
+
+            // Bind the same resources again for position updates
             compute_pass.set_bind_group(0, &self.compute_vertices_bind_group, &[]);
             compute_pass.set_bind_group(1, &self.compute_velocities_bind_group, &[]);
             compute_pass.set_bind_group(2, &self.compute_data_bind_group, &[]);
             compute_pass.set_bind_group(3, &self.springs_bind_group, &[]);
-            compute_pass.dispatch_workgroups(((N_CLOTH_VERTICES_PER_ROW*N_CLOTH_VERTICES_PER_ROW) as f32/128.0).ceil() as u32, 1, 1);
+
+            // Dispatch compute workgroups for position updates
+            compute_pass.dispatch_workgroups(
+                ((N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f32 / 128.0).ceil() as u32,
+                1,
+                1,
+            );
         }
-        computation.submit();
+
+        // ================================
+        // Step 4: Submit computations to GPU
+        // ================================
+        computation.submit(); // Submit all compute passes for execution
     }
+
 }
 
 fn main() {
     let window = Window::new();
-
 
     let context = window.get_context();
 
