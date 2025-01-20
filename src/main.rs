@@ -1,5 +1,3 @@
-// parrallel programming project
-
 use wgpu_bootstrap::{
     window::Window,
     frame::Frame,
@@ -45,19 +43,21 @@ struct Spring {
     pub index2: f32,
     pub rest_length: f32,
 }
-
-// we want to change the size of the cloth, the number of vertices and the start position
+// =========================================================================================
+//                                        PARAMETERS
+// =========================================================================================
+// CLOTH
 const CLOTH_SIZE: f32 = 50.0;
 const N_CLOTH_VERTICES_PER_ROW: u32 = 25; // the cloth is a square, the minimum is 2
 const CLOTH_CENTER_X: f32 = 0.0;
 const CLOTH_CENTER_Y: f32 = 10.0;
 const CLOTH_CENTER_Z: f32 = 0.0;
-// Sphere
+// SPHERE
 const SPHERE_RADIUS: f32 = 10.0;
 const SPHERE_CENTER_X: f32 = 0.0;
 const SPHERE_CENTER_Y: f32 = 0.0;
 const SPHERE_CENTER_Z: f32 = 0.0;
-// Physics
+// PHYSICS
 const MASS: f32 = 200.0;
 // const VERTEX_MASS: f32 = MASS / (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f32;
 const VERTEX_MASS: f32 = 0.16;
@@ -69,6 +69,7 @@ const SHEAR_DAMPING: f32 = 0.05;
 const BEND_DAMPING: f32 = 0.15;
 
 const N_ITERATIONS: u32 = 500; 
+// =========================================================================================
 
 struct MyApp {
     camera_bind_group: wgpu::BindGroup,
@@ -120,7 +121,7 @@ impl MyApp {
         // sphere ------------------------------------------------------------
         let sphere_pipeline = context.create_render_pipeline(
             "Render Pipeline Sphere",
-            include_str!("blue.wgsl"),
+            include_str!("sphere.wgsl"),
             &[Vertex::desc()],
             &[&context.camera_bind_group_layout],
             wgpu::PrimitiveTopology::LineList
