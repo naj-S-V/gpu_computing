@@ -58,8 +58,6 @@ const SPHERE_CENTER_X: f32 = 0.0;
 const SPHERE_CENTER_Y: f32 = 0.0;
 const SPHERE_CENTER_Z: f32 = 0.0;
 // PHYSICS
-const MASS: f32 = 200.0;
-// const VERTEX_MASS: f32 = MASS / (N_CLOTH_VERTICES_PER_ROW * N_CLOTH_VERTICES_PER_ROW) as f32;
 const VERTEX_MASS: f32 = 0.16;
 const STRUCTURAL_STIFFNESS: f32 = 150.0;
 const SHEAR_STIFFNESS: f32 = 5.0;
@@ -106,11 +104,11 @@ impl MyApp {
         let texture_bind_group = create_texture_bind_group(context, &texture);
 
         let camera = Camera {
-            eye: (0.0, 10.0, 50.0).into(),
+            eye: (20.0, 50.0, 50.0).into(),
             target: (0.0, 0.0, 0.0).into(),
             up: cgmath::Vector3::unit_y(),
             aspect: context.get_aspect_ratio(),
-            fovy: 90.0,
+            fovy: 75.0,
             znear: 0.1,
             zfar: 1000.0,
         };
